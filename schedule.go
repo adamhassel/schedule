@@ -3,30 +3,35 @@ package schedule
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"sort"
 	"time"
 
-	"github.com/kelvins/geocoder"
+	"github.com/adamhassel/power"
 	"github.com/kelvins/sunrisesunset"
-	geo "github.com/martinlindhe/google-geolocate"
 	"github.com/tidwall/gjson"
 )
-
-const apikey = "AIzaSyDXRbQTSdRIUf122Vhp77YXM-8ZvRFt_6c"
 
 type HourPrice struct {
 	Hour  uint
 	Price float64
 }
 
+// Entry is a full start-stop part of a schedule
+type Entry struct {
+	Start time.Time
+	Stop  time.Time
+}
+
+// Schedule is a complete schedule.
+type Schedule []Entry
+
 type HourPrices []*HourPrice
 
 type byPrice struct{ HourPrices }
 type byHour struct{ HourPrices }
 
-// example has the next 24 hours' power prices, indexed by hour
+// example has the next 24 hours' power prices, indexed by Hour
 var Example = HourPrices{
 	{21, 1.82},
 	{22, 2.09},
@@ -54,40 +59,100 @@ var Example = HourPrices{
 	{20, 1.80},
 }
 
+func FPToHourPrices(prices power.FullPrices) HourPrices {
+	if len(prices) == 0 {
+		return nil
+	}
+	hp := make(HourPrices, len(prices))
+	for i, p := range prices {
+		hp[i] = &HourPrice{
+			Hour:  uint(p.ValidFrom.Hour()),
+			Price: p.TotalIncVAT,
+		}
+	}
+	return hp
+}
+
 func (h *HourPrices) Add(hour uint, price float64) {
 	*h = append(*h, &HourPrice{hour, price})
 }
 
-func NewSchedule(cap int) HourPrices {
-	hp := make(HourPrices, 0, cap)
-	return hp
+// Schedule will compact the hour-list into a shorter list of start and stop times with prices.
+func (h HourPrices) Schedule() Schedule {
+	var schedule = make(Schedule, 0)
+	today := Hour(time.Now(), 0)
+	// combine adjacent hours in h
+	var se Entry
+	for i := 0; i < len(h); i++ {
+		hp := h[i]
+		fmt.Printf("%+v\n", hp.Hour)
+		if se.Start.IsZero() {
+			fmt.Println("iszero")
+			se.Start = Hour(today, int(hp.Hour))
+			se.Stop = Hour(today, int(hp.Hour)+1)
+			//	se.Cost += hp.Price // Don;t just add the kWh-prices....
+			continue
+		}
+		if se.Stop.Hour() == int(hp.Hour) {
+			fmt.Println("hours match", i)
+			se.Stop = Hour(today, int(hp.Hour)+1)
+			if i != len(h)-1 {
+				continue
+			}
+		}
+		fmt.Println("else")
+		schedule = append(schedule, se)
+		se = Entry{}
+		i--
+	}
+	return schedule
+}
+
+// FIXME: Maybe move these guys to the Schellydule package?
+type Cronjob struct {
+	Cron    string
+	Command string
+}
+
+func (s Schedule) Cron() []Cronjob {
+	if len(s) == 0 {
+		return nil
+	}
+	rv := make([]Cronjob, 0, len(s)*2)
+	for _, e := range s {
+		start := Cronjob{e.Start.Format("04 15 * * *"), "On"}
+		stop := Cronjob{e.Stop.Format("04 15 * * *"), "Off"}
+
+		rv = append(rv, start, stop)
+	}
+	return rv
 }
 
 func (h HourPrices) Len() int      { return len(h) }
 func (h HourPrices) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
-func (p byPrice) Less(i, j int) bool { return p.HourPrices[i].price < p.HourPrices[j].price }
-func (p byHour) Less(i, j int) bool  { return p.HourPrices[i].hour < p.HourPrices[j].hour }
+func (p byPrice) Less(i, j int) bool { return p.HourPrices[i].Price < p.HourPrices[j].Price }
+func (p byHour) Less(i, j int) bool  { return p.HourPrices[i].Hour < p.HourPrices[j].Hour }
 
-// byPrice returns a slice of hours sorted by price
+// byPrice returns a slice of hours sorted by Price
 func (h HourPrices) byPrice() {
 	sort.Sort(byPrice{h})
 }
 
 func (h HourPrices) Print() {
 	for i, hp := range h {
-		fmt.Printf("idx %d Hours %d - %d: %f\n", i, hp.hour, hp.hour+1, hp.price)
+		fmt.Printf("idx %d Hours %d - %d: %f\n", i, hp.Hour, hp.Hour+1, hp.Price)
 	}
 }
 
-// Total calculates the total money spent by running the schedule at `cunsumption` Watts (NOT kW!)
+// Total calculates the total money spent by running the schedule at `consumption` Watts (NOT kW!)
 func (h HourPrices) Total(consumption int) float64 {
 	var rv float64
 	if consumption == 0 {
 		consumption = 1000.0
 	}
 	for _, hp := range h {
-		rv += hp.price * float64(consumption) / 1000.0
+		rv += hp.Price * float64(consumption) / 1000.0
 	}
 	return rv
 }
@@ -107,20 +172,7 @@ func (h HourPrices) NCheapest(n int) HourPrices {
 
 // PruneNightHours reduces the number of candidates at night to at most n
 func (h HourPrices) PruneNightHours(n int) (HourPrices, error) {
-	lng, lat, err := getLongLat()
-	if err != nil {
-		return nil, err
-	}
-	now := time.Now()
-	_, offsetSec := now.Zone()
-	offsetHr := float64(offsetSec / 60 / 60)
-	p := sunrisesunset.Parameters{
-		Latitude:  lat,
-		Longitude: lng,
-		UtcOffset: offsetHr,
-		Date:      now,
-	}
-	sunrise, sunset, err := p.GetSunriseSunset()
+	sunrise, sunset, err := getSunriseSunset(time.Now())
 	fmt.Println("sunrise:", sunrise.Format("15:04"), "sunset:", sunset.Format("15:04"))
 	if err != nil {
 		return nil, err
@@ -132,8 +184,8 @@ func (h HourPrices) PruneNightHours(n int) (HourPrices, error) {
 		if err != nil {
 			return nil, err
 		}
-		if hp.hour < uint(sunrise.Hour()) || hp.hour > uint(sunset.Hour()) {
-			fmt.Println("removing hour", hp.hour, "at index", i)
+		if hp.Hour < uint(sunrise.Hour()) || hp.Hour > uint(sunset.Hour()) {
+			fmt.Println("removing Hour", hp.Hour, "at index", i)
 			night++
 			remove = append(remove, i)
 		}
@@ -151,7 +203,7 @@ func (h HourPrices) PruneNightHours(n int) (HourPrices, error) {
 	remove = remove[0:r]
 	sort.Slice(sort.IntSlice(remove), func(i int, j int) bool { return remove[i] > remove[j] })
 	for _, i := range remove {
-		fmt.Println("removing", i, h[i].hour)
+		fmt.Println("removing", i, h[i].Hour)
 		h.RemoveAtIdx(i, true)
 		fmt.Println("done", i)
 	}
@@ -174,7 +226,7 @@ func (h *HourPrices) RemoveAtIdx(i int, preserveOrder bool) {
 }
 
 func getLongLat() (float64, float64, error) {
-	r, err := http.Get("http://ipwhois.app/json/")
+	r, err := http.Get("https://ipwhois.app/json/")
 	if err != nil {
 		return 0, 0, err
 	}
@@ -188,28 +240,29 @@ func getLongLat() (float64, float64, error) {
 		lat := gjson.Get(string(body), "latitude").Num
 		return long, lat, nil
 	}
+	err = fmt.Errorf("error getting location: %d %s: %s", r.StatusCode, r.Status, string(body))
+	return 0, 0, err
+}
 
-	// See all Address fields in the documentation
-	client := geo.NewGoogleGeo(apikey)
-	res, err := client.Geolocate()
-	if err == nil {
+// Hour will return the time in t redefined to the HH:00:00 in `hour`
+func Hour(t time.Time, hour int) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), hour, 0, 0, 0, t.Location())
+}
 
-		return res.Lng, res.Lat, nil
-	}
-	log.Printf("no result by ip: %s", err)
-	geocoder.ApiKey = apikey
-	address := geocoder.Address{
-		Street:     "Enhøjsvej",
-		Number:     25,
-		City:       "Allerød",
-		Country:    "Denmark",
-		PostalCode: "3450",
-	}
-
-	// Convert address to location (latitude, longitude)
-	location, err := geocoder.Geocoding(address)
+// getSunriseSunset returns the sunrise and sunset times for the date in `t`
+func getSunriseSunset(t time.Time) (time.Time, time.Time, error) {
+	lng, lat, err := getLongLat()
 	if err != nil {
-		return 0, 0, err
+		// If we can't geolocate, set sunrise to 6 am and sunset to 6 pm.
+		return Hour(t, 6), Hour(t, 18), fmt.Errorf("returning default sunrise/sunsert: %w", err)
 	}
-	return location.Longitude, location.Latitude, nil
+	_, offsetSec := t.Zone()
+	offsetHr := float64(offsetSec / 60 / 60)
+	p := sunrisesunset.Parameters{
+		Latitude:  lat,
+		Longitude: lng,
+		UtcOffset: offsetHr,
+		Date:      t,
+	}
+	return p.GetSunriseSunset()
 }
