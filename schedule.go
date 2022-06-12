@@ -114,6 +114,8 @@ type Cronjob struct {
 	Command string
 }
 
+type Cronjobs []Cronjob
+
 func (s Schedule) Cron() []Cronjob {
 	if len(s) == 0 {
 		return nil
@@ -127,6 +129,7 @@ func (s Schedule) Cron() []Cronjob {
 	}
 	return rv
 }
+
 
 func (h HourPrices) Len() int      { return len(h) }
 func (h HourPrices) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
