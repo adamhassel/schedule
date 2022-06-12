@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/adamhassel/power"
@@ -130,6 +131,25 @@ func (s Schedule) Cron() []Cronjob {
 	return rv
 }
 
+func (e Entry) String() string {
+	return e.Start.Format("15:04") + " - " + e.Stop.Format("15:04")
+}
+
+func (s Schedule) String() string {
+	var out strings.Builder
+	for _, e := range s {
+		out.WriteString(e.String() + "\n")
+	}
+	return out.String()
+}
+
+func (s Schedule) Strings() []string {
+	out := make([]string, len(s))
+	for i, e := range s {
+		out[i] = e.String()
+	}
+	return out
+}
 
 func (h HourPrices) Len() int      { return len(h) }
 func (h HourPrices) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
