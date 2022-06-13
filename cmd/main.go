@@ -25,10 +25,9 @@ func main() {
 	if err != nil {
 		log.Println(err)
 	}
-	log.Println("len ", len(schedule.Example))
 	c := list.NCheapest(12)
 	c.Print()
-	fmt.Printf("Total spent on schedule: %.2f", c.Total(500))
+	fmt.Printf("Total spent on schedule: %.2f", c.Total(350))
 	fmt.Println("Summarized schedule:")
 	s := c.Schedule()
 	b, e := json.MarshalIndent(s, "", "  ")

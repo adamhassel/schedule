@@ -33,32 +33,6 @@ type byPrice struct{ HourPrices }
 type byHour struct{ HourPrices }
 
 // example has the next 24 hours' power prices, indexed by Hour
-var Example = HourPrices{
-	{21, 1.82},
-	{22, 2.09},
-	{23, 1.71},
-	{0, 1.75},
-	{1, 1.70},
-	{2, 1.70},
-	{3, 1.70},
-	{4, 1.70},
-	{5, 1.70},
-	{6, 1.78},
-	{7, 2.66},
-	{8, 2.67},
-	{9, 2.67},
-	{10, 2.63},
-	{11, 2.39},
-	{12, 2.20},
-	{13, 2.24},
-	{14, 2.39},
-	{15, 2.32},
-	{16, 2.57},
-	{17, 3.14},
-	{18, 3.13},
-	{19, 2.53},
-	{20, 1.80},
-}
 
 func FPToHourPrices(prices power.FullPrices) HourPrices {
 	if len(prices) == 0 {
@@ -86,22 +60,18 @@ func (h HourPrices) Schedule() Schedule {
 	var se Entry
 	for i := 0; i < len(h); i++ {
 		hp := h[i]
-		fmt.Printf("%+v\n", hp.Hour)
 		if se.Start.IsZero() {
-			fmt.Println("iszero")
 			se.Start = Hour(today, int(hp.Hour))
 			se.Stop = Hour(today, int(hp.Hour)+1)
 			//	se.Cost += hp.Price // Don;t just add the kWh-prices....
 			continue
 		}
 		if se.Stop.Hour() == int(hp.Hour) {
-			fmt.Println("hours match", i)
 			se.Stop = Hour(today, int(hp.Hour)+1)
 			if i != len(h)-1 {
 				continue
 			}
 		}
-		fmt.Println("else")
 		schedule = append(schedule, se)
 		se = Entry{}
 		i--
@@ -109,27 +79,31 @@ func (h HourPrices) Schedule() Schedule {
 	return schedule
 }
 
-// FIXME: Maybe move these guys to the Schellydule package?
-type Cronjob struct {
-	Cron    string
-	Command string
+/*// FIXME: Maybe move these guys to the Schellydule package?
+type cronjob struct {
+	cron    string
+	command string
 }
+*/
 
-type Cronjobs []Cronjob
+//type Cronjobs []cronjob
 
-func (s Schedule) Cron() []Cronjob {
+/*// Fixme: Unused
+func (s Schedule) Cron_unused() []cronjob {
 	if len(s) == 0 {
 		return nil
 	}
-	rv := make([]Cronjob, 0, len(s)*2)
+	rv := make([]cronjob, 0, len(s)*2)
 	for _, e := range s {
-		start := Cronjob{e.Start.Format("04 15 * * *"), "On"}
-		stop := Cronjob{e.Stop.Format("04 15 * * *"), "Off"}
+		start := cronjob{e.Start.Format("04 15 * * *"), "On"}
+		stop := cronjob{e.Stop.Format("04 15 * * *"), "Off"}
 
 		rv = append(rv, start, stop)
 	}
 	return rv
 }
+
+*/
 
 func (e Entry) String() string {
 	return e.Start.Format("15:04") + " - " + e.Stop.Format("15:04")
