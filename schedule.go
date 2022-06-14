@@ -22,6 +22,7 @@ type HourPrice struct {
 type Entry struct {
 	Start time.Time
 	Stop  time.Time
+	Cost  float64
 }
 
 // Schedule is a complete schedule.
@@ -63,7 +64,7 @@ func (h HourPrices) Schedule() Schedule {
 		if se.Start.IsZero() {
 			se.Start = Hour(today, int(hp.Hour))
 			se.Stop = Hour(today, int(hp.Hour)+1)
-			//	se.Cost += hp.Price // Don;t just add the kWh-prices....
+			se.Cost += hp.Price // Don;t just add the kWh-prices....
 			continue
 		}
 		if se.Stop.Hour() == int(hp.Hour) {
