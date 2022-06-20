@@ -64,7 +64,7 @@ func (h HourPrices) Schedule() Schedule {
 		if se.Start.IsZero() {
 			se.Start = Hour(today, int(hp.Hour))
 			se.Stop = Hour(today, int(hp.Hour)+1)
-			se.Cost += hp.Price // Don;t just add the kWh-prices....
+			se.Cost += hp.Price
 			continue
 		}
 		if se.Stop.Hour() == int(hp.Hour) {
@@ -73,38 +73,19 @@ func (h HourPrices) Schedule() Schedule {
 				continue
 			}
 		}
+
+		// handle the special case where the last stop-hour is midnight. This creates
+		// confusion, because then we might have ambiguity, if there's also a midnight
+		// start time. So set that to 23:59 instead (and minute resolution, not seconds, because Shelly doesn't show seconds).
+		if t := se.Stop; t.Hour() == 0 {
+			se.Stop.Add(-1 * time.Minute)
+		}
 		schedule = append(schedule, se)
 		se = Entry{}
 		i--
 	}
 	return schedule
 }
-
-/*// FIXME: Maybe move these guys to the Schellydule package?
-type cronjob struct {
-	cron    string
-	command string
-}
-*/
-
-//type Cronjobs []cronjob
-
-/*// Fixme: Unused
-func (s Schedule) Cron_unused() []cronjob {
-	if len(s) == 0 {
-		return nil
-	}
-	rv := make([]cronjob, 0, len(s)*2)
-	for _, e := range s {
-		start := cronjob{e.Start.Format("04 15 * * *"), "On"}
-		stop := cronjob{e.Stop.Format("04 15 * * *"), "Off"}
-
-		rv = append(rv, start, stop)
-	}
-	return rv
-}
-
-*/
 
 func (e Entry) String() string {
 	return e.Start.Format("15:04") + " - " + e.Stop.Format("15:04")
