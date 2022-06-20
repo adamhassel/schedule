@@ -73,13 +73,6 @@ func (h HourPrices) Schedule() Schedule {
 				continue
 			}
 		}
-
-		// handle the special case where the last stop-hour is midnight. This creates
-		// confusion, because then we might have ambiguity, if there's also a midnight
-		// start time. So set that to 23:59 instead (and minute resolution, not seconds, because Shelly doesn't show seconds).
-		if t := se.Stop; t.Hour() == 0 {
-			se.Stop.Add(-1 * time.Minute)
-		}
 		schedule = append(schedule, se)
 		se = Entry{}
 		i--
