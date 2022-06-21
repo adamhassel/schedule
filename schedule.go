@@ -20,9 +20,9 @@ type HourPrice struct {
 
 // Entry is a full start-stop part of a schedule
 type Entry struct {
-	Start time.Time
-	Stop  time.Time
-	Cost  float64
+	Start time.Time `json:"start"`
+	Stop  time.Time `json:"stop"`
+	Cost  float64   `json:"cost,omitempty"`
 }
 
 // Schedule is a complete schedule.
@@ -67,6 +67,7 @@ func (h HourPrices) Schedule() Schedule {
 			se.Cost += hp.Price
 			continue
 		}
+		se.Cost += hp.Price
 		if se.Stop.Hour() == int(hp.Hour) {
 			se.Stop = Hour(today, int(hp.Hour)+1)
 			if i != len(h)-1 {
@@ -97,6 +98,21 @@ func (s Schedule) Strings() []string {
 	for i, e := range s {
 		out[i] = e.String()
 	}
+	return out
+}
+
+func (s Schedule) Map(effect float64) map[string]string {
+	if effect == 0 {
+		effect = 1000
+	}
+	out := make(map[string]string, len(s))
+	var total float64
+	for _, e := range s {
+		cost := e.Cost * (effect / 1000)
+		out[e.String()] = fmt.Sprintf("%.2f", cost)
+		total += cost
+	}
+	out["total"] = fmt.Sprintf("%.2f", total)
 	return out
 }
 
