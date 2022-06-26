@@ -13,6 +13,8 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+const IPLocationURL = "https://ipwhois.app/json/"
+
 type HourPrice struct {
 	Hour  uint
 	Price float64
@@ -145,76 +147,48 @@ func (h HourPrices) Total(consumption int) float64 {
 	return rv
 }
 
-func (h HourPrices) NCheapest(n int) HourPrices {
+// NCheapest returns the n cheapest hours, with at most nh hours between sunset and sunrise
+func (h HourPrices) NCheapest(n int, nh int) (HourPrices, error) {
 	if n > len(h) {
 		n = len(h)
 	}
 	h.Print()
+	// Sort by price
 	sort.Sort(byPrice{h})
-	h.Print()
-	sub := h[:n]
-	fmt.Println(len(sub))
-	sort.Sort(byHour{sub})
-	return sub
-}
 
-// PruneNightHours reduces the number of candidates at night to at most n
-func (h HourPrices) PruneNightHours(n int) (HourPrices, error) {
+	// get the n cheapest, while skipping anything that's at night, once the quota is full
+	sub := make(HourPrices, 0, n)
 	sunrise, sunset, err := getSunriseSunset(time.Now())
-	fmt.Println("sunrise:", sunrise.Format("15:04"), "sunset:", sunset.Format("15:04"))
 	if err != nil {
 		return nil, err
 	}
-	sort.Sort(byPrice{h})
-	var remove = make([]int, 0, n)
-	var night int
-	for i, hp := range h {
-		if err != nil {
-			return nil, err
+	fmt.Println("sunrise/sunset", sunrise.String(), sunset.String())
+	var i int
+	for _, hp := range h {
+		if len(sub) >= n {
+			break
 		}
-		if hp.Hour < uint(sunrise.Hour()) || hp.Hour > uint(sunset.Hour()) {
-			fmt.Println("removing Hour", hp.Hour, "at index", i)
-			night++
-			remove = append(remove, i)
+		if dark(hp.Hour, sunrise, sunset) {
+			if i < nh-1 {
+				sub = append(sub, hp)
+				i++
+			}
+			continue
 		}
+		sub = append(sub, hp)
 	}
-
-	// calculate number of elements to remove
-	r := night - n
-	if r < 0 {
-		r = 0
-	}
-	if r > len(remove) {
-		r = len(remove)
-	}
-	fmt.Println("Will remove", r)
-	remove = remove[0:r]
-	sort.Slice(sort.IntSlice(remove), func(i int, j int) bool { return remove[i] > remove[j] })
-	for _, i := range remove {
-		fmt.Println("removing", i, h[i].Hour)
-		h.RemoveAtIdx(i, true)
-		fmt.Println("done", i)
-	}
-	fmt.Println("Len:", len(h))
-	return h, nil
+	fmt.Println(len(sub))
+	sort.Sort(byHour{sub})
+	return sub, nil
 }
 
-// RemoveAtIdx removes the element at index i
-func (h *HourPrices) RemoveAtIdx(i int, preserveOrder bool) {
-	if preserveOrder {
-		// Remove the element at index i from a.
-		copy((*h)[i:], (*h)[i+1:]) // Shift a[i+1:] left one index.
-		(*h)[len(*h)-1] = nil      // Erase last element (write zero value).
-		*h = (*h)[:len(*h)-1]      // Truncate slice.
-		return
-	}
-	(*h)[i] = (*h)[len(*h)-1] // Copy last element to index i.
-	(*h)[len(*h)-1] = nil     // Erase last element (write zero value).
-	*h = (*h)[:len(*h)-1]     // Truncate slice.
+// dark returns true if the hour t is between sunrise and sunset
+func dark(t uint, rise, set time.Time) bool {
+	return t < uint(rise.Hour()) || t > uint(set.Hour())
 }
 
 func getLongLat() (float64, float64, error) {
-	r, err := http.Get("https://ipwhois.app/json/")
+	r, err := http.Get(IPLocationURL)
 	if err != nil {
 		return 0, 0, err
 	}

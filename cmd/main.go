@@ -20,12 +20,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	list, err := schedule.FPToHourPrices(prices).PruneNightHours(3)
-	/*list, err := schedule.Example.PruneNightHours(3)*/
+	list := schedule.FPToHourPrices(prices)
+
+	c, err := list.NCheapest(12, 3)
 	if err != nil {
 		log.Println(err)
 	}
-	c := list.NCheapest(12)
 	c.Print()
 	fmt.Printf("Total spent on schedule: %.2f", c.Total(350))
 	fmt.Println("Summarized schedule:")
