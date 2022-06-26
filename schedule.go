@@ -118,6 +118,12 @@ func (s Schedule) Map(effect float64) map[string]string {
 	return out
 }
 
+func NewSchedule(cap int) HourPrices {
+	hp := make(HourPrices, 0, cap)
+	return hp
+
+}
+
 func (h HourPrices) Len() int      { return len(h) }
 func (h HourPrices) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
@@ -135,20 +141,23 @@ func (h HourPrices) Print() {
 	}
 }
 
-// Total calculates the total money spent by running the schedule at `consumption` Watts (NOT kW!)
+// Total calculates the total money spent by running the schedule at `cunsumption` Watts (NOT kW!)
 func (h HourPrices) Total(consumption int) float64 {
 	var rv float64
 	if consumption == 0 {
 		consumption = 1000.0
 	}
 	for _, hp := range h {
+
 		rv += hp.Price * float64(consumption) / 1000.0
+
 	}
 	return rv
 }
 
 // NCheapest returns the n cheapest hours, with at most nh hours between sunset and sunrise
 func (h HourPrices) NCheapest(n int, nh int) (HourPrices, error) {
+
 	if n > len(h) {
 		n = len(h)
 	}
