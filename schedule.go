@@ -55,7 +55,7 @@ func (h *HourPrices) Add(hour uint, price float64) {
 	*h = append(*h, &HourPrice{hour, price})
 }
 
-// Schedule will compact the hour-list into a shorter list of start and stop times with prices.
+// Schedule will compact the hour-list into a shorter list of start and stop times with prices per kWh.
 func (h HourPrices) Schedule() Schedule {
 	var schedule = make(Schedule, 0)
 	today := Hour(time.Now(), 0)
@@ -69,14 +69,17 @@ func (h HourPrices) Schedule() Schedule {
 			se.Cost += hp.Price
 			continue
 		}
-		se.Cost += hp.Price
 		if se.Stop.Hour() == int(hp.Hour) {
 			se.Stop = Hour(today, int(hp.Hour)+1)
+			se.Cost += hp.Price
 			if i != len(h)-1 {
 				continue
 			}
 		}
 		schedule = append(schedule, se)
+		if i == len(h)-1 {
+			break
+		}
 		se = Entry{}
 		i--
 	}
@@ -148,16 +151,13 @@ func (h HourPrices) Total(consumption int) float64 {
 		consumption = 1000.0
 	}
 	for _, hp := range h {
-
 		rv += hp.Price * float64(consumption) / 1000.0
-
 	}
 	return rv
 }
 
 // NCheapest returns the n cheapest hours, with at most nh hours between sunset and sunrise
 func (h HourPrices) NCheapest(n int, nh int) (HourPrices, error) {
-
 	if n > len(h) {
 		n = len(h)
 	}
