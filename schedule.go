@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/adamhassel/power"
+	"github.com/adamhassel/power/entities"
 	"github.com/kelvins/sunrisesunset"
 	"github.com/tidwall/gjson"
 )
@@ -37,7 +37,7 @@ type byHour struct{ HourPrices }
 
 // example has the next 24 hours' power prices, indexed by Hour
 
-func FPToHourPrices(prices power.FullPrices) HourPrices {
+func FPToHourPrices(prices []entities.FullPrice) HourPrices {
 	if len(prices) == 0 {
 		return nil
 	}
