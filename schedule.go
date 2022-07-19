@@ -3,11 +3,13 @@ package schedule
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/adamhassel/power"
 	"github.com/adamhassel/power/entities"
 	"github.com/kelvins/sunrisesunset"
 	"github.com/tidwall/gjson"
@@ -51,37 +53,52 @@ func FPToHourPrices(prices []entities.FullPrice) HourPrices {
 	return hp
 }
 
-func (h *HourPrices) Add(hour uint, price float64) {
+/*func (h *HourPrices) Add(hour uint, price float64) {
 	*h = append(*h, &HourPrice{hour, price})
+}*/
+
+// DurationHours returns the number of hours from `start` the schedule will run, taking adjacent schdules into account
+func (h HourPrices) DurationHours(start time.Time) int {
+	sort.Slice(h, func(i, j int) bool { return h[i].Hour < h[j].Hour })
+	for i, hp := range h {
+		if start.Hour() != Hour(start, int(hp.Hour)).Hour() {
+			continue
+		}
+		j := i
+		for j < len(h) {
+			current := Hour(start, int(h[j].Hour))
+			next := Hour(start, int(h[j].Hour+1))
+			if j != len(h)-1 {
+				next = Hour(start, int(h[j+1].Hour))
+			}
+			if current.Add(time.Hour).Equal(next) {
+				j++
+				if j != len(h) {
+					continue
+				}
+			}
+			return int(current.Sub(start.Truncate(time.Hour)).Hours()) + 1
+		}
+		return 1
+	}
+	return 0
 }
 
 // Schedule will compact the hour-list into a shorter list of start and stop times with prices per kWh.
 func (h HourPrices) Schedule() Schedule {
 	var schedule = make(Schedule, 0)
 	today := Hour(time.Now(), 0)
-	// combine adjacent hours in h
-	var se Entry
-	for i := 0; i < len(h); i++ {
+	sort.Slice(h, func(i, j int) bool {
+		return h[i].Hour < h[j].Hour
+	})
+	for i := 0; i < len(h); {
+		var se Entry
 		hp := h[i]
-		if se.Start.IsZero() {
-			se.Start = Hour(today, int(hp.Hour))
-			se.Stop = Hour(today, int(hp.Hour)+1)
-			se.Cost += hp.Price
-			continue
-		}
-		if se.Stop.Hour() == int(hp.Hour) {
-			se.Stop = Hour(today, int(hp.Hour)+1)
-			se.Cost += hp.Price
-			if i != len(h)-1 {
-				continue
-			}
-		}
+		se.Start = Hour(today, int(hp.Hour))
+		duration := h.DurationHours(se.Start)
+		se.Stop = se.Start.Add(time.Duration(duration) * time.Hour)
 		schedule = append(schedule, se)
-		if i == len(h)-1 {
-			break
-		}
-		se = Entry{}
-		i--
+		i += duration
 	}
 	return schedule
 }
@@ -96,6 +113,14 @@ func (s Schedule) String() string {
 		out.WriteString(e.String() + "\n")
 	}
 	return out.String()
+}
+
+func (s Schedule) Hours() int {
+	res := 0
+	for _, e := range s {
+		res += int(e.Stop.Add(1 * time.Minute).Sub(e.Start).Hours())
+	}
+	return res
 }
 
 func (s Schedule) Strings() []string {
@@ -113,7 +138,26 @@ func (s Schedule) Map(effect float64) map[string]string {
 	out := make(map[string]string, len(s))
 	var total float64
 	for _, e := range s {
-		cost := e.Cost * (effect / 1000)
+		var cost float64
+		if e.Stop.Minute() != 0 {
+			e.Stop = e.Stop.Add(time.Hour).Truncate(time.Hour)
+		}
+		p, err := power.Prices(e.Start, e.Stop, nil, true)
+		if err != nil {
+			log.Printf("Error: %s", err)
+		}
+		ps := power.FullPrices{
+			Contents: p,
+			From:     e.Start,
+			To:       e.Stop,
+		}
+
+		for h := e.Start; h.Before(e.Stop); h = h.Add(time.Hour) {
+			c := ps.Price(h)
+			cost += c
+		}
+		cost = cost * (effect / 1000)
+		e.Cost = cost
 		out[e.String()] = fmt.Sprintf("%.2f", cost)
 		total += cost
 	}
