@@ -139,20 +139,21 @@ func (s Schedule) Map(effect float64) map[string]string {
 	var total float64
 	for _, e := range s {
 		var cost float64
-		if e.Stop.Minute() != 0 {
-			e.Stop = e.Stop.Add(time.Hour).Truncate(time.Hour)
+		stop := e.Stop
+		if stop.Minute() != 0 {
+			stop = stop.Add(time.Hour).Truncate(time.Hour)
 		}
-		p, err := power.Prices(e.Start, e.Stop, nil, true)
+		p, err := power.Prices(e.Start, stop, nil, true)
 		if err != nil {
 			log.Printf("Error: %s", err)
 		}
 		ps := power.FullPrices{
 			Contents: p,
 			From:     e.Start,
-			To:       e.Stop,
+			To:       stop,
 		}
 
-		for h := e.Start; h.Before(e.Stop); h = h.Add(time.Hour) {
+		for h := e.Start; h.Before(stop); h = h.Add(time.Hour) {
 			c := ps.Price(h)
 			cost += c
 		}
